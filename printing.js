@@ -26,11 +26,7 @@ browser.on('update', (data) => {
 
 // Search mDNS for IPP Printers on the local lan
 router.get('/getPrinterList', ctx => {
-	// ctx.contentType = 'application/json'
 	ctx.set('Content-Type', 'application/json')
-	// ctx.response.headers['Content-Type']
-	// console.log(ctx.response.header)
-	// ctx.response.header['Content-Type'] = 'application/json'
 	ctx.body = JSON.stringify(mdnsList)
 })
 
@@ -42,6 +38,7 @@ router.get('/getPrinter/:uuid', async (ctx, next) => {
 			resolve(JSON.stringify(res))
 		});
 	})
+	ctx.set('Content-Type', 'application/json')
 	ctx.body = result;
 })
 
