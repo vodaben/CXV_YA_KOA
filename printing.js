@@ -5,9 +5,6 @@ const base64 = require('base-64');
 const fs = require('fs');
 
 const Printer = require('c15yo-printing')
-// const Printer = require('./Class/Printer.class.js')
-
-const BreakException = {};
 
 var printer = new Printer();
 
