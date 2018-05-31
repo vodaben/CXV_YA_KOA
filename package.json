@@ -10,7 +10,7 @@
   "license": "ISC",
   "dependencies": {
     "base-64": "^0.1.0",
-    "c15yo-printing": "git+https://github.com/vodaben/c15yo-printing.git",
+    "c15yo-printing": "^1.0.2",
     "koa": "^2.5.1",
     "koa-body": "^2.5.0",
     "koa-router": "^7.4.0",

@@ -5,8 +5,7 @@ const base64 = require('base-64');
 const fs = require('fs');
 
 const Printer = require('c15yo-printing')
-
-var printer = new Printer();
+const printer = new Printer();
 
 // Search mDNS for IPP Printers on the local lan
 router.get('/getPrinterList', ctx => {
