@@ -1,100 +1,218 @@
 const Router = require('koa-router');
 const router = new Router({ prefix: '/printing' });
 
-const mdns = require('mdns-js');
-const _ = require('lodash');
-const ipp = require('ipp');
-const uuidv5 = require('uuid/v5');
+const base64 = require('base-64');
 const fs = require('fs');
+
+const Printer = require('c15yo-printing')
+// const Printer = require('./Class/Printer.class.js')
 
 const BreakException = {};
 
-var browser = mdns.createBrowser();
-var mdnsList = {};
-
-browser.on('ready', () => browser.discover());
-browser.on('update', (data) => {
-	try{
-		data.type.forEach((type) => {
-			if(type.name == 'ipp' || type.name == 'ipps') {
-				mdnsList[uuidv5(data.addresses[0], uuidv5.DNS)] = data;
-				throw BreakException;
-			}
-		})
-	}catch(e){ if(e !== BreakException) throw e }
-});
+var printer = new Printer();
 
 // Search mDNS for IPP Printers on the local lan
 router.get('/getPrinterList', ctx => {
 	ctx.set('Content-Type', 'application/json')
-	ctx.body = JSON.stringify(mdnsList)
+	// ctx.body = JSON.stringify(mdnsList)
+	ctx.body = printer.getPrinters();
 })
 
-// Query IPP Printer: Get info
-router.get('/getPrinter/:uuid', async (ctx, next) => {
-	let printer = ipp.Printer("http://" + mdnsList[ctx.params.uuid].addresses[0] + ":631/ipp/printer");
-	let result = await new Promise((resolve, reject) => {
-		printer.execute("Get-Printer-Attributes", null, function(err, res){
-			resolve(JSON.stringify(res))
-		});
-	})
+// Query Printer: Get info
+router.get('/getPrinter/:printer', (ctx, next) => {
 	ctx.set('Content-Type', 'application/json')
-	ctx.body = result;
+	ctx.body = printer.getPrinter(base64.decode(ctx.params.printer))
 })
+
+// Query Printer: Get IPP attributes
+router.get('/getPrinterAttributes/:printer', async (ctx, next) => {
+	ctx.set('Content-Type', 'application/json')
+	try{
+		let result = await new Promise((resolve, reject) => {
+			printer.getPrinterAttributes(base64.decode(ctx.params.printer), (err, result) => {
+				if(err) reject(err)
+				else resolve(result)
+			})
+		});
+		ctx.body = {
+			status: 'OK',
+			data: result
+		};
+	}catch(e){
+		ctx.body = {
+			status: 'ERROR',
+			error: e.message
+		}
+	}
+})
+
+// Query IPP Printer: Get job
+router.get('/getPrinterJob/:printer/:job', async (ctx, next) => {
+	ctx.set('Content-Type', 'application/json')
+	try{
+		let result = await new Promise((resolve, reject) => {
+			printer.getJobAttributes(
+				base64.decode(ctx.params.printer),  
+				base64.decode(ctx.params.job),
+				(err, data) => {
+					if(err) reject(err)
+					else resolve(data)
+				})
+		});
+		ctx.body = {
+			status: 'OK',
+			job: result
+		};
+	} catch(e) {
+		ctx.body = {
+			status: 'ERROR',
+			error: e.message
+		}
+	}
+});
+
 
 // Query IPP Printer: Get job attributes
-router.get('/getPrinterJobAttributes/:uuid', async (ctx, next) => {
-	let printer = ipp.Printer("http://" + mdnsList[ctx.params.uuid].addresses[0] + ":631/ipp/printer");
-	let result = await new Promise((resolve, reject) => {
-		printer.execute("Get-Printer-Attributes", null, function(err, res){
-			let result = {};
-			let attributes = res['printer-attributes-tag']['job-creation-attributes-supported']
-			attributes.forEach((attribute) => {
-				if(attribute.endsWith('-col')) {
-					if(Array.isArray(res['printer-attributes-tag'][attribute + '-supported'])) {
-						result[attribute] = {}
-						res['printer-attributes-tag'][attribute + '-supported'].forEach((col) => {
-							result[attribute][col] = res['printer-attributes-tag'][col + '-supported']
-						})
-					} else {
-						result[attribute] = res['printer-attributes-tag'][attribute + '-supported']
-					}
-				} else {
-					result[attribute] = res['printer-attributes-tag'][attribute + '-supported']
-				}
+router.get('/getPrinterJobAttributes/:printer', async (ctx, next) => {
+	ctx.set('Content-Type', 'application/json')
+	try{
+		let result = await new Promise((resolve, reject) => {
+			printer.getPrinterAttributes(base64.decode(ctx.params.printer), (err, result) => {
+				if(err) reject(err)
+				else resolve(result)
 			})
-			resolve(JSON.stringify(result))
 		});
-	})
-	ctx.body = result;
+		let returnVal = {};
+		let attributes = result['printer-attributes-tag']['job-creation-attributes-supported']
+		attributes.forEach((attribute) => {
+			if(attribute.endsWith('-col')) {
+				if(Array.isArray(result['printer-attributes-tag'][attribute + '-supported'])) {
+					returnVal[attribute] = {}
+					result['printer-attributes-tag'][attribute + '-supported'].forEach((col) => {
+						returnVal[attribute][col] = result['printer-attributes-tag'][col + '-supported']
+					})
+				} else {
+					returnVal[attribute] = result['printer-attributes-tag'][attribute + '-supported']
+				}
+			} else {
+				returnVal[attribute] = result['printer-attributes-tag'][attribute + '-supported']
+			}
+		})
+		ctx.body = {
+			status: 'OK',
+			'job-attributes-tag': returnVal
+		};
+	}catch(e){
+		ctx.body = {
+			status: 'ERROR',
+			error: e.message
+		}
+	}
 })
 
+// Query job status
+// router.get('/getPrinterJobAttributes/:joburi', async (ctx, next) => {
+// 	ctx.set('Content-Type', 'application/json')
+// });
+
 // Send Print Job
-router.put('/print/:uuid', async (ctx, next) => {
+// Send Print Job and Immediately return job id
+router.put('/printJPEG/:printer', async (ctx, next) => {
+	ctx.set('Content-Type', 'application/json')
 	let body = ctx.request.body
-	console.log(body.files.image)
 	if (body.files.image) {
-		let msg = {
-			"operation-attributes-tag": {
-				"requesting-user-name": "Bumblebee",
-				"job-name": "whatever.jpg",
-				"document-format": body.files.image.path
-			},
-			"job-attributes-tag":{
-				"media-col": {
-					"media-source": "photo"
-				}
+		try{
+			let result = await new Promise((resolve, reject) => {
+				printer.printJPEG(
+					base64.decode(ctx.params.printer), 
+					fs.readFileSync(body.files.image.path),
+					{
+						"job-attributes-tag":{
+							"sides": "one-sided",
+							"print-quality": "draft",
+							"print-content-optimize": "photo",
+							"media-col": {
+								"media-source": "photo"
+							}
+						},
+					},
+					(err, res) => {
+						if(err) reject(err)
+						else resolve(res)
+					})
+			});
+
+			ctx.body = {
+				status: 'OK',
+				data: result,
+				job: base64.encode(result['job-attributes-tag']['job-uri'])
 			}
-			, data: fs.readFileSync(body.files.image.path)
-			// , data: new Buffer(body.files.image.path)
-		};
-		let printer = ipp.Printer("http://" + mdnsList[ctx.params.uuid].addresses[0] + ":631/ipp/printer");
-		// printer.execute("Print-Job", msg, function(err, res){
-			// console.log(err);
-			// console.log(res);
-		// });
-		// Buffer.from(b64string, 'base64');
-		ctx.body = 'OK'
+		}catch(e){
+			ctx.body = {
+				status: 'ERROR',
+				data: e.message
+			}
+		}
+	} else {
+		ctx.status = 400
+		ctx.body = 'Missing'
+	}
+})
+
+// Send Print Job and Await Print Job to complete
+router.put('/printJPEGSync/:printer', async (ctx, next) => {
+	ctx.set('Content-Type', 'application/json')
+	let body = ctx.request.body
+	if (body.files.image) {
+		try{
+			let result = await new Promise((resolve, reject) => {
+				printer.printJPEG(
+					base64.decode(ctx.params.printer), 
+					fs.readFileSync(body.files.image.path),
+					{
+						"job-attributes-tag":{
+							"sides": "one-sided",
+							"print-quality": "draft",
+							"print-content-optimize": "photo",
+							"media-col": {
+								"media-source": "photo"
+							}
+						},
+					},
+					(err, res) => {
+						if(err) {
+							reject(err)
+						} else {
+							let returnVal = {
+								job: res
+							}
+
+							var loop = setInterval(() => {
+								printer.getJobAttributes(
+									base64.decode(ctx.params.printer),  
+									res['job-attributes-tag']['job-uri'],
+									(err, data) => {
+										if(data['job-attributes-tag']['job-state'] != "processing") {
+											clearInterval(loop)
+											returnVal.completion = data
+											resolve(returnVal)
+										}
+									})
+							}, 1000)
+						}
+					})
+			});
+
+			ctx.body = {
+				status: 'OK',
+				data: result
+			}
+		}catch(e){
+			ctx.body = {
+				status: 'ERROR',
+				data: e.message
+			}
+		}
 	} else {
 		ctx.status = 400
 		ctx.body = 'Missing'
