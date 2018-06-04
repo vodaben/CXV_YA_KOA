@@ -166,13 +166,36 @@ router.put('/printJPEGSync/:printer', async (ctx, next) => {
 					base64.decode(ctx.params.printer), 
 					fs.readFileSync(body.files.image.path),
 					{
+						// HP Envy Photo 7820
+						// "job-attributes-tag":{
+						// 	"sides": "one-sided",
+						// 	"print-quality": "draft",
+						// 	"print-content-optimize": "photo",
+						// 	"media-col": {
+						// 		"media-source": "photo"
+						// 	}
+						// },
+
+						// HP OJ 6970 
 						"job-attributes-tag":{
 							"sides": "one-sided",
 							"print-quality": "draft",
-							"print-content-optimize": "photo",
+							// "print-content-optimize": "photo",
+							// "media": "iso_a6_105x148mm"
+							// "print-scaling": "fit",
 							"media-col": {
-								"media-source": "photo"
+								"media-size": {
+									"x-dimension": 10160,
+									"y-dimension": 15240
+								},
+								"media-top-margin": 296,
+								"media-bottom-margin": 296,
+								"media-left-margin": 296,
+								"media-right-margin": 296,
+								"media-source": "main",
+								"media-type": "photographic-glossy"
 							}
+							// "print-scaling": 3
 						},
 					},
 					(err, res) => {
@@ -204,6 +227,7 @@ router.put('/printJPEGSync/:printer', async (ctx, next) => {
 				data: result
 			}
 		}catch(e){
+			console.log(e)
 			ctx.body = {
 				status: 'ERROR',
 				data: e.message
